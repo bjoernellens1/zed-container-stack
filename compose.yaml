@@ -1,0 +1,165 @@
+name: zed-fedora-stack
+
+# One compose file, multiple profiles:
+#   nvidia-sdk    Official ZED SDK, CUDA depth/tracking/GUI tools.
+#   nvidia-ros2   ZED SDK + ROS 2 wrapper image built locally.
+#   amd           CUDA-free open-capture fallback with /dev/dri + /dev/kfd.
+#   intel         CUDA-free open-capture fallback with /dev/dri.
+#   cpu           CUDA-free open-capture fallback, no GPU device assumption.
+#   toolbx-image  Build a Fedora toolbox-compatible helper image.
+#
+# Notes:
+# - Full ZED SDK depth and positional tracking require NVIDIA CUDA.
+# - AMD/Intel/CPU services use zed-open-capture + OpenCV examples/fallback scripts.
+# - For Podman/NVIDIA, compose support for GPUs varies. scripts/podman-nvidia-run.sh
+#   is the most reliable path when `podman compose --profile nvidia-sdk run ...` fails.
+
+x-common-env: &common-env
+  DISPLAY: ${DISPLAY:-:0}
+  WAYLAND_DISPLAY: ${WAYLAND_DISPLAY:-wayland-0}
+  XDG_RUNTIME_DIR: ${XDG_RUNTIME_DIR:-/tmp}
+  QT_X11_NO_MITSHM: "1"
+  LIBGL_ALWAYS_INDIRECT: "0"
+  ZED_SDK_VERBOSE: "1"
+
+x-common-volumes: &common-volumes
+  - ${DATA_DIR:-./data}:/data:Z
+  - ./tools:/workspace/tools:Z
+  - ./scripts:/workspace/scripts:Z
+  - ./docs:/workspace/docs:Z
+  - /tmp/.X11-unix:/tmp/.X11-unix:ro
+  - ${XDG_RUNTIME_DIR:-/tmp}:${XDG_RUNTIME_DIR:-/tmp}
+  - /run/udev:/run/udev:ro
+  - /etc/localtime:/etc/localtime:ro
+
+x-common-runtime: &common-runtime
+  network_mode: host
+  ipc: host
+  stdin_open: true
+  tty: true
+  privileged: true
+  working_dir: /workspace
+
+services:
+  zed-nvidia-sdk:
+    <<: *common-runtime
+    image: ${ZED_PY_IMAGE:-stereolabs/zed:5.3-py-devel-cuda12.8-ubuntu24.04}
+    profiles: ["nvidia-sdk"]
+    environment:
+      <<: *common-env
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all,compute,utility,graphics,display,video
+    volumes: *common-volumes
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+      - /dev/dri:/dev/dri
+    # Docker Compose supports this. Podman Compose may ignore or reject it.
+    gpus: all
+    command: ["bash"]
+
+  zed-nvidia-tools:
+    <<: *common-runtime
+    build:
+      context: .
+      dockerfile: Containerfile.nvidia-tools
+      args:
+        ZED_BASE_IMAGE: ${ZED_BASE_IMAGE:-stereolabs/zed:5.3-tools-devel-cuda12.8-ubuntu24.04}
+    image: localhost/zed-fedora-stack:nvidia-tools
+    profiles: ["nvidia-sdk"]
+    environment:
+      <<: *common-env
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all,compute,utility,graphics,display,video
+    volumes: *common-volumes
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+      - /dev/dri:/dev/dri
+    gpus: all
+    command: ["bash"]
+
+  zed-nvidia-ros2:
+    <<: *common-runtime
+    build:
+      context: .
+      dockerfile: Containerfile.ros2
+      args:
+        ZED_ROS_BASE_IMAGE: ${ZED_ROS_BASE_IMAGE:-stereolabs/zed:5.3-tools-devel-cuda12.8-ubuntu24.04}
+        ROS_DISTRO: jazzy
+    image: localhost/zed-fedora-stack:ros2-jazzy
+    profiles: ["nvidia-ros2"]
+    environment:
+      <<: *common-env
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all,compute,utility,graphics,display,video
+      ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-42}
+      RMW_IMPLEMENTATION: ${RMW_IMPLEMENTATION:-rmw_fastrtps_cpp}
+    volumes: *common-volumes
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+      - /dev/dri:/dev/dri
+    gpus: all
+    command: ["bash", "-lc", "source /opt/ros/jazzy/setup.bash && source /opt/zed_ros2_ws/install/setup.bash && bash"]
+
+  zed-amd-opencapture:
+    <<: *common-runtime
+    build:
+      context: .
+      dockerfile: Containerfile.opencapture
+    image: localhost/zed-fedora-stack:opencapture
+    profiles: ["amd"]
+    environment:
+      <<: *common-env
+      GPU_PATH: amd
+      HSA_OVERRIDE_GFX_VERSION: ${HSA_OVERRIDE_GFX_VERSION:-}
+    volumes: *common-volumes
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+      - /dev/dri:/dev/dri
+      - /dev/kfd:/dev/kfd
+    group_add:
+      - video
+      - render
+    command: ["bash"]
+
+  zed-intel-opencapture:
+    <<: *common-runtime
+    build:
+      context: .
+      dockerfile: Containerfile.opencapture
+    image: localhost/zed-fedora-stack:opencapture
+    profiles: ["intel"]
+    environment:
+      <<: *common-env
+      GPU_PATH: intel
+    volumes: *common-volumes
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+    command: ["bash"]
+
+  zed-cpu-opencapture:
+    <<: *common-runtime
+    build:
+      context: .
+      dockerfile: Containerfile.opencapture
+    image: localhost/zed-fedora-stack:opencapture
+    profiles: ["cpu"]
+    environment:
+      <<: *common-env
+      GPU_PATH: cpu
+      LIBGL_ALWAYS_SOFTWARE: "1"
+    volumes: *common-volumes
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    command: ["bash"]
+
+  zed-toolbox-image:
+    build:
+      context: .
+      dockerfile: toolbx/Containerfile
+    image: localhost/zed-fedora-stack:toolbox
+    profiles: ["toolbx-image"]
+    command: ["bash", "-lc", "echo Built toolbox-compatible image localhost/zed-fedora-stack:toolbox"]

@@ -1,0 +1,15 @@
+name: sanity
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  shell-and-python-sanity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax check
+        run: python3 -m py_compile tools/*.py
+      - name: Compose file syntax
+        run: docker compose config >/tmp/compose.out

@@ -1,0 +1,30 @@
+ARG ZED_BASE_IMAGE=stereolabs/zed:5.3-tools-devel-cuda12.8-ubuntu24.04
+FROM ${ZED_BASE_IMAGE}
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_BREAK_SYSTEM_PACKAGES=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      bash ca-certificates curl git jq less nano procps psmisc \
+      python3 python3-pip python3-venv python3-numpy python3-opencv \
+      usbutils v4l-utils pciutils mesa-utils x11-apps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Most official ZED images already contain pyzed in py-* variants. For tools-devel
+# variants, install the matching Python API when the helper script is present.
+RUN python3 - <<'PY' || true
+try:
+    import pyzed.sl  # noqa: F401
+    print('pyzed already available')
+except Exception:
+    import os, subprocess, sys
+    helper = '/usr/local/zed/get_python_api.py'
+    if os.path.exists(helper):
+        subprocess.check_call([sys.executable, helper])
+PY
+
+COPY tools /workspace/tools
+COPY scripts /workspace/scripts
+WORKDIR /workspace
+CMD ["bash"]

@@ -1,0 +1,15 @@
+FROM registry.fedoraproject.org/fedora-toolbox:42
+
+RUN dnf -y update \
+    && dnf -y install \
+      bash git cmake make gcc gcc-c++ pkgconf-pkg-config \
+      podman podman-compose docker-compose \
+      libusb1-devel hidapi-devel opencv-devel opencv-python python3 python3-pip python3-numpy \
+      v4l-utils usbutils pciutils mesa-dri-drivers mesa-libGL mesa-libGLU glx-utils \
+      xorg-x11-xauth xeyes jq less nano procps-ng findutils \
+    && dnf clean all
+
+COPY tools /workspace/tools
+COPY scripts /workspace/scripts
+WORKDIR /workspace
+CMD ["bash"]
