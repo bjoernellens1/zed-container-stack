@@ -6,16 +6,33 @@ ENV container=docker \
 RUN dnf -y update \
     && dnf -y install \
       bash git cmake make gcc gcc-c++ pkgconf-pkg-config \
-      libusb1-devel hidapi-devel opencv-devel opencv-python python3 python3-pip python3-numpy \
+      libusb1-devel hidapi-devel opencv-devel python3-opencv python3 python3-pip python3-numpy wget \
       v4l-utils usbutils pciutils mesa-dri-drivers mesa-libGL mesa-libGLU glx-utils \
       libX11 libXext libXrender libxkbcommon-x11 xorg-x11-xauth xeyes jq less nano procps-ng findutils \
     && dnf clean all
 
+# Build zed-open-capture library + sample binaries (includes zed_open_capture_depth_example)
 RUN mkdir -p /opt/src \
     && git clone --depth=1 https://github.com/stereolabs/zed-open-capture.git /opt/src/zed-open-capture \
-    && cmake -S /opt/src/zed-open-capture -B /opt/src/zed-open-capture/build -DCMAKE_BUILD_TYPE=Release \
+    && cmake -S /opt/src/zed-open-capture -B /opt/src/zed-open-capture/build \
+         -DCMAKE_BUILD_TYPE=Release \
+         -DBUILD_SAMPLES=ON \
     && cmake --build /opt/src/zed-open-capture/build -j"$(nproc)" \
     && cmake --install /opt/src/zed-open-capture/build \
+    && echo "/usr/local/lib" > /etc/ld.so.conf.d/usr-local.conf \
+    && ldconfig
+
+# Copy and build the depth recorder tool
+COPY tools/zed_oc_depth_recorder.cpp /tmp/zed_oc_depth_recorder.cpp
+RUN g++ -std=c++17 -O2 \
+      -DVIDEO_MOD_AVAILABLE \
+      -I/usr/local/include/zed-open-capture \
+      -o /usr/local/bin/zed_oc_depth_recorder \
+      /tmp/zed_oc_depth_recorder.cpp \
+      $(pkg-config --cflags opencv4) \
+      -lzed_open_capture \
+      $(pkg-config --libs opencv4) \
+    && rm /tmp/zed_oc_depth_recorder.cpp \
     && ldconfig
 
 COPY tools /workspace/tools

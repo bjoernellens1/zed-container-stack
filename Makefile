@@ -1,10 +1,14 @@
 SHELL := /usr/bin/env bash
 COMPOSE ?= docker compose
-PROFILE ?= nvidia-sdk
-SERVICE ?= zed-nvidia-tools
+PROFILE ?= cpu
+SERVICE ?= zed-cpu-opencapture
 SESSION ?= $$(date +%Y%m%d_%H%M%S)
 
-.PHONY: help init list-tags gui-allow gui-deny build pull shell viewer depth-viewer diagnostic record-svo record-svo-pose export-rgbd ros2-shell ros2-record opencapture-shell opencapture-viewer podman-nvidia toolbox-build toolbox-create toolbox-enter
+.PHONY: help init list-tags gui-allow gui-deny build pull shell \
+        cpu-capture cpu-shell intel-capture intel-shell \
+        viewer depth-viewer diagnostic record-svo record-svo-pose export-rgbd \
+        ros2-shell ros2-record opencapture-shell opencapture-viewer \
+        podman-nvidia toolbox-build toolbox-create toolbox-enter
 
 help:
 	@sed -n '1,220p' README.md | sed -n '/^## Quick start/,$$p' | head -n 120
@@ -58,6 +62,20 @@ ros2-shell:
 
 ros2-record:
 	@$(COMPOSE) --profile nvidia-ros2 run --rm zed-nvidia-ros2 bash -lc '/workspace/scripts/ros2-record.sh /data/rosbags/$(SESSION)'
+
+cpu-capture:
+	@$(COMPOSE) --profile cpu run --rm zed-cpu-opencapture \
+	  bash -lc '/workspace/scripts/cpu-depth-record.sh $(SESSION)'
+
+cpu-shell:
+	@$(COMPOSE) --profile cpu run --rm zed-cpu-opencapture bash
+
+intel-capture:
+	@$(COMPOSE) --profile intel run --rm zed-intel-opencapture \
+	  bash -lc 'GPU_PATH=intel /workspace/scripts/cpu-depth-record.sh $(SESSION)'
+
+intel-shell:
+	@$(COMPOSE) --profile intel run --rm zed-intel-opencapture bash
 
 opencapture-shell:
 	@$(COMPOSE) --profile cpu run --rm zed-cpu-opencapture bash
